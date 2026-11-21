@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Async Port Scanner</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --text:#1c2128; --muted:#6a737d; --border:#d8dce1;
+          --accent:#2563eb; --ok:#15803d; --err:#b91c1c; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0f1318; --card:#181d24; --text:#e6e9ee; --muted:#8b95a1; --border:#2b323b;
+            --accent:#4d8dff; --ok:#4ade80; --err:#f87171; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:24px 16px; background:var(--bg); color:var(--text);
+         font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  main { max-width:720px; margin:0 auto; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  .sub { color:var(--muted); margin:0 0 20px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:18px; margin-bottom:16px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:12px; }
+  .grid .wide { grid-column:1/-1; }
+  label { display:block; font-size:12px; color:var(--muted); margin-bottom:4px; }
+  input { width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:6px;
+          background:var(--bg); color:var(--text); font:inherit; }
+  input:focus { outline:2px solid var(--accent); outline-offset:-1px; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:14px; }
+  button { padding:8px 16px; border-radius:6px; border:1px solid var(--border); background:var(--bg);
+           color:var(--text); font:inherit; cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .preset { font-size:13px; padding:4px 10px; }
+  #status { margin-left:auto; color:var(--muted); font-size:13px; }
+  #status.err { color:var(--err); }
+  table { width:100%; border-collapse:collapse; }
+  th,td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--border); }
+  th { font-size:12px; color:var(--muted); font-weight:600; }
+  .badge { display:inline-block; padding:1px 8px; border-radius:99px; font-size:12px;
+           background:color-mix(in srgb, var(--ok) 18%, transparent); color:var(--ok); }
+  .summary { display:flex; gap:24px; flex-wrap:wrap; margin-bottom:10px; }
+  .summary b { font-size:20px; display:block; }
+  .summary span { color:var(--muted); font-size:12px; }
+  .empty { color:var(--muted); padding:12px 0; }
+  .note { font-size:12px; color:var(--muted); }
+  .bar { height:4px; background:var(--border); border-radius:2px; overflow:hidden; margin-top:12px; display:none; }
+  .bar i { display:block; height:100%; width:40%; background:var(--accent); animation:slide 1s infinite ease-in-out; }
+  @keyframes slide { 0%{margin-left:-40%} 100%{margin-left:100%} }
+</style>
+</head>
+<body>
+<main>
+  <h1>Async Port Scanner</h1>
+  <p class="sub">Web front end for the C++ epoll scanner. Scan only systems you own or are authorized to test.</p>
+
+  <section class="card">
+    <div class="grid">
+      <div class="wide"><label for="host">Host</label><input id="host" value="127.0.0.1" autocomplete="off"></div>
+      <div><label for="start">Start port</label><input id="start" type="number" min="1" max="65535" value="1"></div>
+      <div><label for="end">End port</label><input id="end" type="number" min="1" max="65535" value="1024"></div>
+      <div><label for="conc">Concurrency</label><input id="conc" type="number" min="1" max="2000" value="500"></div>
+      <div><label for="timeout">Timeout (ms)</label><input id="timeout" type="number" min="50" max="10000" value="800"></div>
+    </div>
+    <div class="row">
+      <button class="preset" data-s="1" data-e="1024">Well-known (1-1024)</button>
+      <button class="preset" data-s="1" data-e="10000">1-10000</button>
+      <button class="preset" data-s="1" data-e="65535">All ports</button>
+    </div>
+    <div class="row">
+      <button id="go" class="primary">Start scan</button>
+      <button id="csv" disabled>Export CSV</button>
+      <span id="status"></span>
+    </div>
+    <div class="bar" id="bar"><i></i></div>
+  </section>
+
+  <section class="card" id="results" hidden>
+    <div class="summary">
+      <div><b id="sOpen">0</b><span>open ports</span></div>
+      <div><b id="sScanned">0</b><span>scanned</span></div>
+      <div><b id="sTime">0s</b><span>duration</span></div>
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr><th>Port</th><th>Protocol</th><th>Service</th><th>State</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <div class="empty" id="none" hidden>No open ports found in this range.</div>
+  </section>
+  <p class="note">Public IPs are blocked by the server unless it was started with <code>--allow-public</code>.</p>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+let last = null;
+
+document.querySelectorAll('.preset').forEach(b => b.onclick = () => {
+  $('start').value = b.dataset.s; $('end').value = b.dataset.e;
+});
+
+function setStatus(msg, isErr) { $('status').textContent = msg; $('status').className = isErr ? 'err' : ''; }
+
+$('go').onclick = async () => {
+  const body = {
+    host: $('host').value.trim(),
+    start: +$('start').value, end: +$('end').value,
+    concurrency: +$('conc').value, timeout: +$('timeout').value
+  };
+  $('go').disabled = true; $('csv').disabled = true;
+  $('bar').style.display = 'block';
+  setStatus('Scanning ' + body.host + '...');
+  try {
+    const res = await fetch('/scan', { method: 'POST', body: JSON.stringify(body) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Scan failed');
+    last = data; render(data);
+    setStatus('Finished');
+  } catch (e) {
+    setStatus(e.message, true);
+  } finally {
+    $('go').disabled = false; $('bar').style.display = 'none';
+  }
+};
+
+function render(d) {
+  $('results').hidden = false;
+  $('sOpen').textContent = d.ports.length;
+  $('sScanned').textContent = d.scanned.toLocaleString();
+  $('sTime').textContent = d.seconds != null ? d.seconds.toFixed(2) + 's' : '-';
+  const tb = $('rows'); tb.textContent = '';
+  d.ports.forEach(p => {
+    const tr = document.createElement('tr');
+    [p.port, 'tcp', p.service].forEach(v => { const td = document.createElement('td'); td.textContent = v; tr.appendChild(td); });
+    const st = document.createElement('td'); const b = document.createElement('span');
+    b.className = 'badge'; b.textContent = 'open'; st.appendChild(b); tr.appendChild(st);
+    tb.appendChild(tr);
+  });
+  $('none').hidden = d.ports.length > 0;
+  $('csv').disabled = d.ports.length === 0;
+}
+
+$('csv').onclick = () => {
+  if (!last) return;
+  const lines = ['host,port,protocol,service', ...last.ports.map(p => `${last.host},${p.port},tcp,${p.service}`)];
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' }));
+  a.download = 'scan-' + last.host + '.csv'; a.click();
+};
+</script>
+</body>
+</html>
