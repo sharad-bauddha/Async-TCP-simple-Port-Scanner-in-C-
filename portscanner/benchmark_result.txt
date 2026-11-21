@@ -1,0 +1,7 @@
+cat benchmark_result.txt 
+Benchmark on 127.0.0.1 (ports 1-10000)
+concurrency=10  ->  Done: 0 open, 10000 scanned in 1.34518s
+concurrency=50  ->  Done: 0 open, 10000 scanned in 1.30367s
+concurrency=100  ->  Done: 0 open, 10000 scanned in 1.37661s
+concurrency=500  ->  Done: 0 open, 10000 scanned in 1.37692s
+concurrency=900  ->  Done: 0 open, 10000 scanned in 1.34303s
