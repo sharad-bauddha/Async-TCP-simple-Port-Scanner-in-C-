@@ -1,0 +1,39 @@
+ASYNC TCP PORT SCANNER IN C++
+=============================
+
+What it is
+  A fast, single-threaded TCP port scanner for Linux written in C++17.
+  It starts many non-blocking connections at once and waits for all of them
+  with poll(), then reports open ports, closed and filtered counts, scan time
+  and speed (ports per second).
+
+Requirements
+  Linux (Kali, Ubuntu, Debian, or WSL on Windows) and g++.
+  Install g++ if needed:  sudo apt install g++
+
+Build
+  g++ -std=c++17 -O2 -o scanner scanner.cpp
+
+Run
+  ./scanner --demo
+      Built-in self test. The program creates its own open ports, scans
+      ports 1-10000 and prints PASS if every port was detected.
+
+  ./scanner 127.0.0.1 -p 1-10000
+      Scan ports 1-10000 on the given host.
+
+  ./scanner 127.0.0.1 -p 1-1024 -c 500 -t 300
+      -p start-end   port range (default 1-1024)
+      -c number      connections started at once, 1-900 (default 200)
+      -t milliseconds  timeout for each batch (default 800)
+
+Expected demo output (end)
+  RESULT: PASS - scanner detected every open port
+
+Files
+  scanner.cpp               complete source code (single file)
+  Project_Report.pdf        project report
+  Project_Presentation.pptx presentation (6 slides)
+
+Note
+  Scan only systems that you own or have written permission to test.
